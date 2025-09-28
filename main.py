@@ -19,6 +19,7 @@ from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QFont, QPainter, QDrag
 class WatermarkThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal()
+    error = pyqtSignal(str)
 
     def __init__(self, app, output_path):
         super().__init__()
@@ -34,7 +35,7 @@ class WatermarkThread(QThread):
             try:
                 self.app.export_single_image(image_path, self.output_path)
             except Exception as e:
-                print(f"导出失败: {str(e)}")
+                self.error.emit(f"导出图片 {os.path.basename(image_path)} 失败: {str(e)}")
             self.progress.emit(i + 1)
         self.finished.emit()
 
@@ -297,7 +298,10 @@ class WatermarkApp(QMainWindow):
         # 获取系统所有字体
         font_db = QFontDatabase()
         fonts = font_db.families()
-        self.font_combo.addItems(fonts)
+        # 过滤掉符号字体，只保留常见字体
+        common_fonts = [f for f in fonts if not any(x in f.lower() for x in ['symbol', 'dingbat', 'emoji', 'math'])]
+        self.font_combo.addItems(common_fonts[:50])  # 只显示前50种常见字体
+        self.font_combo.setCurrentText("Arial")
         self.font_combo.currentTextChanged.connect(self.update_preview)
         text_layout.addWidget(self.font_combo, 1, 1)
 
@@ -419,6 +423,7 @@ class WatermarkApp(QMainWindow):
         rotation_layout.addWidget(QLabel("旋转角度:"))
         self.rotation_slider = QSlider(Qt.Horizontal)
         self.rotation_slider.setRange(0, 360)
+        self.rotation_slider.setValue(0)
         self.rotation_slider.valueChanged.connect(self.on_rotation_changed)
         rotation_layout.addWidget(self.rotation_slider)
 
@@ -700,11 +705,14 @@ class WatermarkApp(QMainWindow):
                 item.setText(os.path.basename(path))
 
                 # 创建缩略图
-                pixmap = QPixmap(path)
-                if not pixmap.isNull():
-                    # 缩放缩略图
-                    thumb = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    item.setIcon(QIcon(thumb))
+                try:
+                    pixmap = QPixmap(path)
+                    if not pixmap.isNull():
+                        # 缩放缩略图
+                        thumb = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        item.setIcon(QIcon(thumb))
+                except:
+                    pass  # 如果无法加载图片，跳过缩略图
 
                 self.image_list.addItem(item)
 
@@ -767,14 +775,17 @@ class WatermarkApp(QMainWindow):
                 f"color: {color}; background-color: rgba(255, 255, 255, 150); border: 1px dashed #000;")
         else:
             # 图片水印
-            if self.watermark_settings["image_path"]:
-                pixmap = QPixmap(self.watermark_settings["image_path"])
-                if not pixmap.isNull():
-                    # 缩放图片
-                    scale = self.image_scale.value() / 100.0
-                    new_size = QSize(int(pixmap.width() * scale), int(pixmap.height() * scale))
-                    pixmap = pixmap.scaled(new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.draggable_watermark.setPixmap(pixmap)
+            if self.watermark_settings["image_path"] and os.path.exists(self.watermark_settings["image_path"]):
+                try:
+                    pixmap = QPixmap(self.watermark_settings["image_path"])
+                    if not pixmap.isNull():
+                        # 缩放图片
+                        scale = self.image_scale.value() / 100.0
+                        new_size = QSize(int(pixmap.width() * scale), int(pixmap.height() * scale))
+                        pixmap = pixmap.scaled(new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        self.draggable_watermark.setPixmap(pixmap)
+                except:
+                    pass
 
         self.draggable_watermark.adjustSize()
         self.draggable_watermark.move(pos)
@@ -863,19 +874,17 @@ class WatermarkApp(QMainWindow):
         return result
 
     def add_text_watermark(self, image):
-        # 创建可绘制对象
-        if image.mode != 'RGBA':
-            image = image.convert('RGBA')
+        # 确保图像是RGB模式
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
 
-        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
+        # 创建可绘制对象
+        draw = ImageDraw.Draw(image)
 
         # 获取文本设置
         text = self.text_input.text()
         font_family = self.font_combo.currentText()
         font_size = self.font_size.value()
-        bold = self.bold_check.isChecked()
-        italic = self.italic_check.isChecked()
 
         # 创建字体
         try:
@@ -890,9 +899,13 @@ class WatermarkApp(QMainWindow):
             font = ImageFont.load_default()
 
         # 获取文本尺寸
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except:
+            # 旧版本PIL兼容
+            text_width, text_height = draw.textsize(text, font=font)
 
         # 计算水印位置
         position = self.position_combo.currentText()
@@ -907,11 +920,16 @@ class WatermarkApp(QMainWindow):
             preview_width = self.preview_label.width()
             preview_height = self.preview_label.height()
 
-            if preview_width > 0 and preview_height > 0:
-                scale_x = img_width / preview_width
-                scale_y = img_height / preview_height
-                x = int(x * scale_x)
-                y = int(y * scale_y)
+            if preview_width > 0 and preview_height > 0 and self.preview_label.pixmap():
+                pixmap_width = self.preview_label.pixmap().width()
+                pixmap_height = self.preview_label.pixmap().height()
+
+                if pixmap_width > 0 and pixmap_height > 0:
+                    # 计算实际图像与预览图像的比例
+                    scale_x = img_width / pixmap_width
+                    scale_y = img_height / pixmap_height
+                    x = int(x * scale_x)
+                    y = int(y * scale_y)
         else:
             # 使用预设位置
             if position == "左上角":
@@ -939,60 +957,49 @@ class WatermarkApp(QMainWindow):
         color = self.color_btn.styleSheet().split(": ")[1].split(";")[0]
         opacity = self.opacity_slider.value()
 
-        # 创建带透明度的颜色
+        # 创建带透明度的颜色（使用RGBA模式）
         from PIL import ImageColor
         rgb = ImageColor.getrgb(color)
-        rgba = rgb + (int(255 * opacity / 100),)
-
-        # 旋转文本
-        rotation_angle = self.rotation_slider.value()
 
         # 如果有描边效果
         if self.outline_check.isChecked():
             outline_color = self.outline_color_btn.styleSheet().split(": ")[1].split(";")[0]
             outline_width = self.outline_width.value()
             outline_rgb = ImageColor.getrgb(outline_color)
-            outline_rgba = outline_rgb + (int(255 * opacity / 100),)
 
             # 绘制描边（在多个位置绘制文本模拟描边）
-            for dx in [-outline_width, 0, outline_width]:
-                for dy in [-outline_width, 0, outline_width]:
+            for dx in range(-outline_width, outline_width + 1):
+                for dy in range(-outline_width, outline_width + 1):
                     if dx != 0 or dy != 0:
-                        draw.text((x + dx, y + dy), text, font=font, fill=outline_rgba)
+                        draw.text((x + dx, y + dy), text, font=font, fill=outline_rgb)
 
         # 如果有阴影效果
         if self.shadow_check.isChecked():
             shadow_color = self.shadow_color_btn.styleSheet().split(": ")[1].split(";")[0]
             shadow_offset = self.shadow_offset.value()
-            shadow_blur = self.shadow_blur.value()
             shadow_rgb = ImageColor.getrgb(shadow_color)
-            shadow_rgba = shadow_rgb + (int(255 * opacity / 100),)
 
-            # 创建阴影图层
-            shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            shadow_draw = ImageDraw.Draw(shadow_layer)
-            shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_rgba)
-
-            # 应用模糊效果
-            if shadow_blur > 0:
-                for i in range(shadow_blur):
-                    shadow_layer = shadow_layer.filter(ImageFilter.BLUR)
-
-            # 合并阴影图层
-            overlay = Image.alpha_composite(overlay, shadow_layer)
-            draw = ImageDraw.Draw(overlay)  # 重新创建draw对象
+            # 绘制阴影
+            draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_rgb)
 
         # 绘制文本
-        draw.text((x, y), text, font=font, fill=rgba)
+        draw.text((x, y), text, font=font, fill=rgb)
 
         # 应用旋转
+        rotation_angle = self.rotation_slider.value()
         if rotation_angle != 0:
-            overlay = overlay.rotate(rotation_angle, expand=True, resample=Image.BICUBIC, center=(x, y))
+            # 创建一个临时图像来旋转文本
+            text_image = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            text_draw = ImageDraw.Draw(text_image)
+            text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
 
-        # 合并水印和原图
-        result = Image.alpha_composite(image, overlay)
+            # 旋转文本图像
+            rotated_text = text_image.rotate(rotation_angle, resample=Image.BICUBIC, expand=False)
 
-        return result.convert("RGB")  # 转换回RGB
+            # 将旋转后的文本合并到原图
+            image = Image.alpha_composite(image.convert('RGBA'), rotated_text).convert('RGB')
+
+        return image
 
     def add_image_watermark(self, image):
         # 获取水印图片路径
@@ -1036,11 +1043,16 @@ class WatermarkApp(QMainWindow):
                 preview_width = self.preview_label.width()
                 preview_height = self.preview_label.height()
 
-                if preview_width > 0 and preview_height > 0:
-                    scale_x = img_width / preview_width
-                    scale_y = img_height / preview_height
-                    x = int(x * scale_x)
-                    y = int(y * scale_y)
+                if preview_width > 0 and preview_height > 0 and self.preview_label.pixmap():
+                    pixmap_width = self.preview_label.pixmap().width()
+                    pixmap_height = self.preview_label.pixmap().height()
+
+                    if pixmap_width > 0 and pixmap_height > 0:
+                        # 计算实际图像与预览图像的比例
+                        scale_x = img_width / pixmap_width
+                        scale_y = img_height / pixmap_height
+                        x = int(x * scale_x)
+                        y = int(y * scale_y)
             else:
                 # 使用预设位置
                 if position == "左上角":
@@ -1088,6 +1100,10 @@ class WatermarkApp(QMainWindow):
             # 如果原图没有透明通道，转换为RGBA
             if image.mode != 'RGBA':
                 image = image.convert('RGBA')
+
+            # 确保水印位置在图像范围内
+            x = max(0, min(x, img_width - wm_width))
+            y = max(0, min(y, img_height - wm_height))
 
             # 合并水印
             image.paste(watermark, (x, y), watermark)
@@ -1191,6 +1207,7 @@ class WatermarkApp(QMainWindow):
         self.export_thread = WatermarkThread(self, output_path)
         self.export_thread.progress.connect(self.progress_dialog.setValue)
         self.export_thread.finished.connect(self.export_finished)
+        self.export_thread.error.connect(self.export_error)
         self.progress_dialog.canceled.connect(self.export_thread.cancel)
         self.export_thread.start()
 
@@ -1198,61 +1215,67 @@ class WatermarkApp(QMainWindow):
         self.progress_dialog.close()
         QMessageBox.information(self, "完成", f"已成功导出 {len(self.images)} 张图片")
 
+    def export_error(self, error_msg):
+        QMessageBox.warning(self, "导出错误", error_msg)
+
     def export_single_image(self, image_path, output_path):
-        # 打开原始图片
-        original_image = Image.open(image_path)
+        try:
+            # 打开原始图片
+            original_image = Image.open(image_path)
 
-        # 调整图片尺寸（如果启用）
-        if self.resize_check.isChecked():
-            if self.resize_percent_radio.isChecked():
-                percent = self.resize_percent.value()
-                new_width = int(original_image.size[0] * percent / 100)
-                new_height = int(original_image.size[1] * percent / 100)
-                original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            else:
-                width = self.resize_width.value()
-                height = self.resize_height.value()
-
-                if self.keep_aspect_check.isChecked():
-                    # 保持宽高比
-                    original_ratio = original_image.size[0] / original_image.size[1]
-                    if width / height > original_ratio:
-                        # 以高度为准
-                        new_width = int(height * original_ratio)
-                        new_height = height
-                    else:
-                        # 以宽度为准
-                        new_width = width
-                        new_height = int(width / original_ratio)
+            # 调整图片尺寸（如果启用）
+            if self.resize_check.isChecked():
+                if self.resize_percent_radio.isChecked():
+                    percent = self.resize_percent.value()
+                    new_width = int(original_image.size[0] * percent / 100)
+                    new_height = int(original_image.size[1] * percent / 100)
+                    original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 else:
-                    new_width = width
-                    new_height = height
+                    width = self.resize_width.value()
+                    height = self.resize_height.value()
 
-                original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    if self.keep_aspect_check.isChecked():
+                        # 保持宽高比
+                        original_ratio = original_image.size[0] / original_image.size[1]
+                        if width / height > original_ratio:
+                            # 以高度为准
+                            new_width = int(height * original_ratio)
+                            new_height = height
+                        else:
+                            # 以宽度为准
+                            new_width = width
+                            new_height = int(width / original_ratio)
+                    else:
+                        new_width = width
+                        new_height = height
 
-        # 添加水印
-        watermarked_image = self.add_watermark_to_image(original_image)
+                    original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-        # 生成输出文件名
-        filename = os.path.basename(image_path)
-        name, ext = os.path.splitext(filename)
+            # 添加水印
+            watermarked_image = self.add_watermark_to_image(original_image)
 
-        prefix = self.prefix_input.text()
-        suffix = self.suffix_input.text()
+            # 生成输出文件名
+            filename = os.path.basename(image_path)
+            name, ext = os.path.splitext(filename)
 
-        output_filename = f"{prefix}{name}{suffix}{ext}"
-        output_filepath = os.path.join(output_path, output_filename)
+            prefix = self.prefix_input.text()
+            suffix = self.suffix_input.text()
 
-        # 确保输出目录存在
-        os.makedirs(output_path, exist_ok=True)
+            output_filename = f"{prefix}{name}{suffix}{ext}"
+            output_filepath = os.path.join(output_path, output_filename)
 
-        # 保存图片
-        format = self.format_combo.currentText()
-        if format == "JPEG":
-            quality = self.quality_slider.value()
-            watermarked_image.save(output_filepath, format, quality=quality, optimize=True)
-        else:
-            watermarked_image.save(output_filepath, format, optimize=True)
+            # 确保输出目录存在
+            os.makedirs(output_path, exist_ok=True)
+
+            # 保存图片
+            format = self.format_combo.currentText()
+            if format == "JPEG":
+                quality = self.quality_slider.value()
+                watermarked_image.save(output_filepath, format, quality=quality, optimize=True)
+            else:
+                watermarked_image.save(output_filepath, format, optimize=True)
+        except Exception as e:
+            raise Exception(f"处理图片 {os.path.basename(image_path)} 时出错: {str(e)}")
 
     def save_template(self):
         name, ok = QInputDialog.getText(self, "保存模板", "请输入模板名称:")
