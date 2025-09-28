@@ -334,13 +334,85 @@ class DraggableLabel(QLabel):
 class WatermarkApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.init_ui()
-        self.load_settings()
 
-        # 延迟更新预览的计时器
-        self.preview_timer = QTimer()
-        self.preview_timer.setSingleShot(True)
-        self.preview_timer.timeout.connect(self.update_preview_delayed)
+        # 初始化关键变量
+        self.images = []
+        self.current_image_index = -1
+        self.per_image_settings = {}
+        self.image_cache = {}
+        self.current_settings_type = "shared"  # 默认使用共享设置
+        self.draggable_watermark = None
+        self.custom_position_mode = False
+
+        # 默认共享设置
+        self.default_shared_settings = {
+            "type": "text",
+            "text": "水印",
+            "font_family": "Microsoft YaHei",
+            "font_size": 200,
+            "bold": False,
+            "italic": False,
+            "color": "#FFFFFF",
+            "opacity": 80,
+            "position": "右下角",
+            "rotation": 0,
+            "shadow": False,
+            "shadow_color": "#000000",
+            "shadow_offset": 2,
+            "shadow_blur": 0,
+            "outline": False,
+            "outline_color": "#000000",
+            "outline_width": 1,
+            "image_path": "",
+            "image_scale": 100,
+            "output_format": "JPEG",
+            "quality": 90,
+            "resize_enabled": False,
+            "resize_width": 0,
+            "resize_height": 0,
+            "resize_percent": 100,
+            "naming_prefix": "",
+            "naming_suffix": "_watermarked"
+        }
+
+        # 默认个性化设置
+        self.default_per_image_settings = {
+            "type": "text",
+            "text": "",  # 为空时使用共享设置的文本
+            "font_family": "Microsoft YaHei",
+            "font_size": 200,
+            "bold": False,
+            "italic": False,
+            "color": "#FFFFFF",
+            "opacity": 80,
+            "rotation": 0,
+            "shadow": False,
+            "shadow_color": "#000000",
+            "shadow_offset": 2,
+            "outline": False,
+            "outline_color": "#000000",
+            "outline_width": 1,
+            "image_path": "",
+            "image_scale": 100,
+            "offset_x": 0,
+            "offset_y": 0
+        }
+
+        # 初始化共享设置
+        self.shared_settings = self.default_shared_settings.copy()
+
+        try:
+            self.init_ui()
+            self.load_settings()
+
+            # 延迟更新预览的计时器
+            self.preview_timer = QTimer()
+            self.preview_timer.setSingleShot(True)
+            self.preview_timer.timeout.connect(self.update_preview_delayed)
+        except Exception as e:
+            print(f"初始化错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def init_ui(self):
         self.setWindowTitle("高级图片水印工具 - 专业版")
@@ -369,50 +441,6 @@ class WatermarkApp(QMainWindow):
         # 右侧：参数设置区域 (30%)
         right_panel = self.create_right_panel()
         main_layout.addWidget(right_panel, 3)  # 比例3
-
-        # 初始化状态
-        self.current_image_index = -1
-        self.images = []
-
-        # 共享设置（所有图片共用）
-        self.shared_settings = {
-            "type": "text",
-            "font_family": "Microsoft YaHei",
-            "font_size": 200,
-            "bold": False,
-            "italic": False,
-            "color": "#FFFFFF",
-            "opacity": 80,
-            "position": "bottom-right",
-            "rotation": 0,
-            "shadow": False,
-            "shadow_color": "#000000",
-            "shadow_offset": 2,
-            "shadow_blur": 0,
-            "outline": False,
-            "outline_color": "#000000",
-            "outline_width": 1,
-            "image_path": "",
-            "image_scale": 100,
-            "output_format": "JPEG",
-            "quality": 90,
-            "resize_enabled": False,
-            "resize_width": 0,
-            "resize_height": 0,
-            "resize_percent": 100,
-            "naming_prefix": "",
-            "naming_suffix": "_watermarked"
-        }
-
-        # 个性化设置（每张图片单独保存）- 扩展为完整设置
-        self.per_image_settings = {}
-
-        # 水印位置拖拽相关
-        self.draggable_watermark = None
-        self.custom_position_mode = False
-
-        # 图片缓存
-        self.image_cache = {}
 
     def create_left_panel(self):
         # 左侧面板 - 图片列表
@@ -450,10 +478,6 @@ class WatermarkApp(QMainWindow):
         self.image_list.currentRowChanged.connect(self.on_image_selected)
         layout.addWidget(self.image_list)
 
-        # 设置拖拽支持
-        self.setAcceptDrops(True)
-        self.image_list.setAcceptDrops(True)
-
         return left_widget
 
     def create_center_panel(self):
@@ -465,13 +489,6 @@ class WatermarkApp(QMainWindow):
 
         # 预览控制
         preview_control_layout = QHBoxLayout()
-
-        # 参数类型选择
-        preview_control_layout.addWidget(QLabel("参数类型:"))
-        self.settings_type_combo = QComboBox()
-        self.settings_type_combo.addItems(["共享设置", "个性化设置"])
-        self.settings_type_combo.currentTextChanged.connect(self.on_settings_type_changed)
-        preview_control_layout.addWidget(self.settings_type_combo)
 
         # 水印位置控制
         preview_control_layout.addWidget(QLabel("水印位置:"))
@@ -546,6 +563,7 @@ class WatermarkApp(QMainWindow):
 
         # 创建标签页
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self.on_tab_changed)  # 连接标签页切换信号
 
         # 共享设置标签页
         self.shared_tab = self.create_shared_tab()
@@ -593,7 +611,7 @@ class WatermarkApp(QMainWindow):
         text_layout.addWidget(QLabel("文本内容:"), 0, 0)
         self.text_input = QLineEdit()
         self.text_input.setText("水印")
-        self.text_input.textChanged.connect(self.schedule_preview_update)
+        self.text_input.textChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.text_input, 0, 1, 1, 2)
 
         # 从EXIF获取日期按钮
@@ -615,7 +633,7 @@ class WatermarkApp(QMainWindow):
 
         self.font_combo.addItems(chinese_fonts[:20] + other_fonts[:30])
         self.font_combo.setCurrentText("Microsoft YaHei")
-        self.font_combo.currentTextChanged.connect(self.schedule_preview_update)
+        self.font_combo.currentTextChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.font_combo, 1, 1, 1, 3)
 
         # 字体大小
@@ -623,16 +641,16 @@ class WatermarkApp(QMainWindow):
         self.font_size = QSpinBox()
         self.font_size.setRange(10, 500)
         self.font_size.setValue(200)
-        self.font_size.valueChanged.connect(self.schedule_preview_update)
+        self.font_size.valueChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.font_size, 2, 1)
 
         # 粗体和斜体
         self.bold_check = QCheckBox("粗体")
-        self.bold_check.stateChanged.connect(self.schedule_preview_update)
+        self.bold_check.stateChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.bold_check, 2, 2)
 
         self.italic_check = QCheckBox("斜体")
-        self.italic_check.stateChanged.connect(self.schedule_preview_update)
+        self.italic_check.stateChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.italic_check, 2, 3)
 
         # 颜色选择
@@ -647,12 +665,12 @@ class WatermarkApp(QMainWindow):
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(0, 100)
         self.opacity_slider.setValue(80)
-        self.opacity_slider.valueChanged.connect(self.schedule_preview_update)
+        self.opacity_slider.valueChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.opacity_slider, 3, 3)
 
         # 阴影效果
         self.shadow_check = QCheckBox("阴影效果")
-        self.shadow_check.stateChanged.connect(self.schedule_preview_update)
+        self.shadow_check.stateChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.shadow_check, 4, 0)
 
         text_layout.addWidget(QLabel("阴影颜色:"), 4, 1)
@@ -665,34 +683,26 @@ class WatermarkApp(QMainWindow):
         self.shadow_offset = QSpinBox()
         self.shadow_offset.setRange(1, 10)
         self.shadow_offset.setValue(2)
-        self.shadow_offset.valueChanged.connect(self.schedule_preview_update)
+        self.shadow_offset.valueChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.shadow_offset, 4, 4)
-
-        # 阴影模糊
-        text_layout.addWidget(QLabel("阴影模糊:"), 5, 0)
-        self.shadow_blur = QSpinBox()
-        self.shadow_blur.setRange(0, 10)
-        self.shadow_blur.setValue(0)
-        self.shadow_blur.valueChanged.connect(self.schedule_preview_update)
-        text_layout.addWidget(self.shadow_blur, 5, 1)
 
         # 描边效果
         self.outline_check = QCheckBox("描边效果")
-        self.outline_check.stateChanged.connect(self.schedule_preview_update)
-        text_layout.addWidget(self.outline_check, 5, 2)
+        self.outline_check.stateChanged.connect(self.on_shared_parameter_changed)
+        text_layout.addWidget(self.outline_check, 5, 0)
 
-        text_layout.addWidget(QLabel("描边颜色:"), 5, 3)
+        text_layout.addWidget(QLabel("描边颜色:"), 5, 1)
         self.outline_color_btn = QPushButton()
         self.outline_color_btn.setStyleSheet("background-color: #000000; border-radius: 4px; min-height: 20px;")
         self.outline_color_btn.clicked.connect(self.choose_outline_color)
-        text_layout.addWidget(self.outline_color_btn, 5, 4)
+        text_layout.addWidget(self.outline_color_btn, 5, 2)
 
-        text_layout.addWidget(QLabel("描边宽度:"), 6, 0)
+        text_layout.addWidget(QLabel("描边宽度:"), 5, 3)
         self.outline_width = QSpinBox()
         self.outline_width.setRange(1, 10)
         self.outline_width.setValue(1)
-        self.outline_width.valueChanged.connect(self.schedule_preview_update)
-        text_layout.addWidget(self.outline_width, 6, 1)
+        self.outline_width.valueChanged.connect(self.on_shared_parameter_changed)
+        text_layout.addWidget(self.outline_width, 5, 4)
 
         layout.addWidget(self.text_group)
 
@@ -716,7 +726,7 @@ class WatermarkApp(QMainWindow):
         self.image_scale.setRange(10, 500)
         self.image_scale.setValue(100)
         self.image_scale.setSuffix("%")
-        self.image_scale.valueChanged.connect(self.schedule_preview_update)
+        self.image_scale.valueChanged.connect(self.on_shared_parameter_changed)
         image_layout.addWidget(self.image_scale, 1, 1)
 
         # 透明度
@@ -724,7 +734,7 @@ class WatermarkApp(QMainWindow):
         self.image_opacity_slider = QSlider(Qt.Horizontal)
         self.image_opacity_slider.setRange(0, 100)
         self.image_opacity_slider.setValue(80)
-        self.image_opacity_slider.valueChanged.connect(self.schedule_preview_update)
+        self.image_opacity_slider.valueChanged.connect(self.on_shared_parameter_changed)
         image_layout.addWidget(self.image_opacity_slider, 1, 3)
 
         layout.addWidget(self.image_group)
@@ -787,7 +797,7 @@ class WatermarkApp(QMainWindow):
         text_layout.addWidget(QLabel("文本内容:"), 0, 0)
         self.per_image_text_input = QLineEdit()
         self.per_image_text_input.setPlaceholderText("为空时使用共享设置的文本内容")
-        self.per_image_text_input.textChanged.connect(self.schedule_preview_update)
+        self.per_image_text_input.textChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_text_input, 0, 1, 1, 2)
 
         # 从EXIF获取日期按钮
@@ -805,7 +815,7 @@ class WatermarkApp(QMainWindow):
         other_fonts = [f for f in fonts if f not in chinese_fonts]
         self.per_image_font_combo.addItems(chinese_fonts[:20] + other_fonts[:30])
         self.per_image_font_combo.setCurrentText("Microsoft YaHei")
-        self.per_image_font_combo.currentTextChanged.connect(self.schedule_preview_update)
+        self.per_image_font_combo.currentTextChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_font_combo, 1, 1, 1, 3)
 
         # 字体大小
@@ -813,16 +823,16 @@ class WatermarkApp(QMainWindow):
         self.per_image_font_size = QSpinBox()
         self.per_image_font_size.setRange(10, 500)
         self.per_image_font_size.setValue(200)
-        self.per_image_font_size.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_font_size.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_font_size, 2, 1)
 
         # 粗体和斜体
         self.per_image_bold_check = QCheckBox("粗体")
-        self.per_image_bold_check.stateChanged.connect(self.schedule_preview_update)
+        self.per_image_bold_check.stateChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_bold_check, 2, 2)
 
         self.per_image_italic_check = QCheckBox("斜体")
-        self.per_image_italic_check.stateChanged.connect(self.schedule_preview_update)
+        self.per_image_italic_check.stateChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_italic_check, 2, 3)
 
         # 颜色选择
@@ -837,12 +847,12 @@ class WatermarkApp(QMainWindow):
         self.per_image_opacity_slider = QSlider(Qt.Horizontal)
         self.per_image_opacity_slider.setRange(0, 100)
         self.per_image_opacity_slider.setValue(80)
-        self.per_image_opacity_slider.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_opacity_slider.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_opacity_slider, 3, 3)
 
         # 阴影效果
         self.per_image_shadow_check = QCheckBox("阴影效果")
-        self.per_image_shadow_check.stateChanged.connect(self.schedule_preview_update)
+        self.per_image_shadow_check.stateChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_shadow_check, 4, 0)
 
         text_layout.addWidget(QLabel("阴影颜色:"), 4, 1)
@@ -856,12 +866,12 @@ class WatermarkApp(QMainWindow):
         self.per_image_shadow_offset = QSpinBox()
         self.per_image_shadow_offset.setRange(1, 10)
         self.per_image_shadow_offset.setValue(2)
-        self.per_image_shadow_offset.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_shadow_offset.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_shadow_offset, 4, 4)
 
         # 描边效果
         self.per_image_outline_check = QCheckBox("描边效果")
-        self.per_image_outline_check.stateChanged.connect(self.schedule_preview_update)
+        self.per_image_outline_check.stateChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_outline_check, 5, 0)
 
         text_layout.addWidget(QLabel("描边颜色:"), 5, 1)
@@ -875,7 +885,7 @@ class WatermarkApp(QMainWindow):
         self.per_image_outline_width = QSpinBox()
         self.per_image_outline_width.setRange(1, 10)
         self.per_image_outline_width.setValue(1)
-        self.per_image_outline_width.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_outline_width.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_outline_width, 5, 4)
 
         layout.addWidget(self.per_image_text_group)
@@ -900,7 +910,7 @@ class WatermarkApp(QMainWindow):
         self.per_image_image_scale.setRange(10, 500)
         self.per_image_image_scale.setValue(100)
         self.per_image_image_scale.setSuffix("%")
-        self.per_image_image_scale.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_image_scale.valueChanged.connect(self.on_per_image_parameter_changed)
         image_layout.addWidget(self.per_image_image_scale, 1, 1)
 
         # 透明度
@@ -908,7 +918,7 @@ class WatermarkApp(QMainWindow):
         self.per_image_image_opacity_slider = QSlider(Qt.Horizontal)
         self.per_image_image_opacity_slider.setRange(0, 100)
         self.per_image_image_opacity_slider.setValue(80)
-        self.per_image_image_opacity_slider.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_image_opacity_slider.valueChanged.connect(self.on_per_image_parameter_changed)
         image_layout.addWidget(self.per_image_image_opacity_slider, 1, 3)
 
         layout.addWidget(self.per_image_image_group)
@@ -941,14 +951,14 @@ class WatermarkApp(QMainWindow):
         self.per_image_offset_x = QSpinBox()
         self.per_image_offset_x.setRange(-500, 500)
         self.per_image_offset_x.setValue(0)
-        self.per_image_offset_x.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_offset_x.valueChanged.connect(self.on_per_image_parameter_changed)
         offset_layout.addWidget(self.per_image_offset_x, 0, 1)
 
         offset_layout.addWidget(QLabel("垂直偏移:"), 0, 2)
         self.per_image_offset_y = QSpinBox()
         self.per_image_offset_y.setRange(-500, 500)
         self.per_image_offset_y.setValue(0)
-        self.per_image_offset_y.valueChanged.connect(self.schedule_preview_update)
+        self.per_image_offset_y.valueChanged.connect(self.on_per_image_parameter_changed)
         offset_layout.addWidget(self.per_image_offset_y, 0, 3)
 
         layout.addWidget(offset_group)
@@ -999,12 +1009,12 @@ class WatermarkApp(QMainWindow):
 
         naming_layout.addWidget(QLabel("前缀:"), 0, 0)
         self.prefix_input = QLineEdit()
-        self.prefix_input.textChanged.connect(self.schedule_preview_update)
+        self.prefix_input.textChanged.connect(self.on_shared_parameter_changed)
         naming_layout.addWidget(self.prefix_input, 0, 1)
 
         naming_layout.addWidget(QLabel("后缀:"), 1, 0)
         self.suffix_input = QLineEdit("_watermarked")
-        self.suffix_input.textChanged.connect(self.schedule_preview_update)
+        self.suffix_input.textChanged.connect(self.on_shared_parameter_changed)
         naming_layout.addWidget(self.suffix_input, 1, 1)
 
         layout.addWidget(naming_group)
@@ -1039,7 +1049,7 @@ class WatermarkApp(QMainWindow):
         self.resize_percent.setRange(1, 500)
         self.resize_percent.setValue(100)
         self.resize_percent.setSuffix("%")
-        self.resize_percent.valueChanged.connect(self.schedule_preview_update)
+        self.resize_percent.valueChanged.connect(self.on_shared_parameter_changed)
         resize_layout.addWidget(self.resize_percent, 2, 1)
 
         # 尺寸调整
@@ -1049,7 +1059,7 @@ class WatermarkApp(QMainWindow):
         self.resize_width.setValue(800)
         self.resize_width.setSuffix(" px")
         self.resize_width.setEnabled(False)
-        self.resize_width.valueChanged.connect(self.schedule_preview_update)
+        self.resize_width.valueChanged.connect(self.on_shared_parameter_changed)
         resize_layout.addWidget(self.resize_width, 3, 1)
 
         resize_layout.addWidget(QLabel("高度:"), 3, 2)
@@ -1058,13 +1068,13 @@ class WatermarkApp(QMainWindow):
         self.resize_height.setValue(600)
         self.resize_height.setSuffix(" px")
         self.resize_height.setEnabled(False)
-        self.resize_height.valueChanged.connect(self.schedule_preview_update)
+        self.resize_height.valueChanged.connect(self.on_shared_parameter_changed)
         resize_layout.addWidget(self.resize_height, 3, 3)
 
         # 保持宽高比
         self.keep_aspect_check = QCheckBox("保持宽高比")
         self.keep_aspect_check.setChecked(True)
-        self.keep_aspect_check.stateChanged.connect(self.schedule_preview_update)
+        self.keep_aspect_check.stateChanged.connect(self.on_shared_parameter_changed)
         resize_layout.addWidget(self.keep_aspect_check, 4, 0, 1, 2)
 
         layout.addWidget(resize_group)
@@ -1115,28 +1125,48 @@ class WatermarkApp(QMainWindow):
 
         return tab
 
-    def on_settings_type_changed(self, text):
-        # 切换共享/个性化设置
-        if text == "共享设置":
-            self.save_per_image_settings_from_ui()  # 保存当前个性化设置
-            self.apply_shared_settings_to_ui()  # 应用共享设置到UI
-        else:
-            self.save_shared_settings_from_ui()  # 保存当前共享设置
-            self.apply_per_image_settings_to_ui()  # 应用个性化设置到UI
+    def on_tab_changed(self, index):
+        """标签页切换时的处理"""
+        if index == 0:  # 共享设置标签页
+            self.current_settings_type = "shared"
+        elif index == 1:  # 个性化设置标签页
+            self.current_settings_type = "per_image"
+            # 更新个性化设置UI
+            if self.current_image_index >= 0:
+                self.apply_per_image_settings_to_ui()
 
+        # 更新预览
         self.update_preview()
+
+    def on_shared_parameter_changed(self):
+        """共享参数改变时的处理"""
+        # 保存共享设置
+        self.save_shared_settings_from_ui()
+
+        # 如果当前使用的是共享设置，则更新预览
+        if self.current_settings_type == "shared":
+            self.schedule_preview_update()
+
+    def on_per_image_parameter_changed(self):
+        """个性化参数改变时的处理"""
+        # 保存个性化设置
+        self.save_per_image_settings_from_ui()
+
+        # 如果当前使用的是个性化设置，则更新预览
+        if self.current_settings_type == "per_image":
+            self.schedule_preview_update()
 
     def on_watermark_type_changed(self, text):
         is_text = text == "文本水印"
         self.text_group.setVisible(is_text)
         self.image_group.setVisible(not is_text)
-        self.schedule_preview_update()
+        self.on_shared_parameter_changed()
 
     def on_per_image_watermark_type_changed(self, text):
         is_text = text == "文本水印"
         self.per_image_text_group.setVisible(is_text)
         self.per_image_image_group.setVisible(not is_text)
-        self.schedule_preview_update()
+        self.on_per_image_parameter_changed()
 
     def on_format_changed(self, text):
         is_jpeg = text == "JPEG"
@@ -1152,7 +1182,7 @@ class WatermarkApp(QMainWindow):
         self.resize_width.setEnabled(enabled and self.resize_dimension_radio.isChecked())
         self.resize_height.setEnabled(enabled and self.resize_dimension_radio.isChecked())
         self.keep_aspect_check.setEnabled(enabled and self.resize_dimension_radio.isChecked())
-        self.schedule_preview_update()
+        self.on_shared_parameter_changed()
 
     def on_resize_method_changed(self, button, checked):
         if not checked:
@@ -1163,7 +1193,7 @@ class WatermarkApp(QMainWindow):
         self.resize_width.setEnabled(not is_percent and self.resize_check.isChecked())
         self.resize_height.setEnabled(not is_percent and self.resize_check.isChecked())
         self.keep_aspect_check.setEnabled(not is_percent and self.resize_check.isChecked())
-        self.schedule_preview_update()
+        self.on_shared_parameter_changed()
 
     def on_position_changed(self, position):
         if position == "自定义拖拽":
@@ -1174,11 +1204,11 @@ class WatermarkApp(QMainWindow):
 
     def on_rotation_changed(self, value):
         self.rotation_value.setText(f"{value}°")
-        self.schedule_preview_update()
+        self.on_shared_parameter_changed()
 
     def on_per_image_rotation_changed(self, value):
         self.per_image_rotation_value.setText(f"{value}°")
-        self.schedule_preview_update()
+        self.on_per_image_parameter_changed()
 
     def on_zoom_changed(self, value):
         self.zoom_label.setText(f"{value}%")
@@ -1188,42 +1218,54 @@ class WatermarkApp(QMainWindow):
         color = QColorDialog.getColor()
         if color.isValid():
             self.color_btn.setStyleSheet(f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            self.on_shared_parameter_changed()
 
     def choose_per_image_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.per_image_color_btn.setStyleSheet(
                 f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            # 更新个性化设置中的颜色
+            if self.current_image_index >= 0:
+                image_path = self.images[self.current_image_index]
+                self.per_image_settings[image_path]["color"] = color.name()
+            self.on_per_image_parameter_changed()
 
     def choose_shadow_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.shadow_color_btn.setStyleSheet(
                 f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            self.on_shared_parameter_changed()
 
     def choose_per_image_shadow_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.per_image_shadow_color_btn.setStyleSheet(
                 f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            # 更新个性化设置中的阴影颜色
+            if self.current_image_index >= 0:
+                image_path = self.images[self.current_image_index]
+                self.per_image_settings[image_path]["shadow_color"] = color.name()
+            self.on_per_image_parameter_changed()
 
     def choose_outline_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.outline_color_btn.setStyleSheet(
                 f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            self.on_shared_parameter_changed()
 
     def choose_per_image_outline_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
             self.per_image_outline_color_btn.setStyleSheet(
                 f"background-color: {color.name()}; border-radius: 4px; min-height: 20px;")
-            self.schedule_preview_update()
+            # 更新个性化设置中的描边颜色
+            if self.current_image_index >= 0:
+                image_path = self.images[self.current_image_index]
+                self.per_image_settings[image_path]["outline_color"] = color.name()
+            self.on_per_image_parameter_changed()
 
     def select_watermark_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择水印图片", "",
@@ -1231,7 +1273,7 @@ class WatermarkApp(QMainWindow):
         if path:
             self.image_path_label.setText(os.path.basename(path))
             self.shared_settings["image_path"] = path
-            self.schedule_preview_update()
+            self.on_shared_parameter_changed()
 
     def select_per_image_watermark_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择水印图片", "",
@@ -1240,10 +1282,8 @@ class WatermarkApp(QMainWindow):
             self.per_image_image_path_label.setText(os.path.basename(path))
             if self.current_image_index >= 0:
                 image_path = self.images[self.current_image_index]
-                if "image_path" not in self.per_image_settings[image_path]:
-                    self.per_image_settings[image_path]["image_path"] = ""
                 self.per_image_settings[image_path]["image_path"] = path
-            self.schedule_preview_update()
+            self.on_per_image_parameter_changed()
 
     def select_output_folder(self):
         path = QFileDialog.getExistingDirectory(self, "选择输出文件夹")
@@ -1277,29 +1317,8 @@ class WatermarkApp(QMainWindow):
             if path not in self.images:
                 self.images.append(path)
 
-                # 为每张图片初始化完整的个性化设置
-                self.per_image_settings[path] = {
-                    "type": "text",
-                    "text": "",
-                    "font_family": "Microsoft YaHei",
-                    "font_size": 200,
-                    "bold": False,
-                    "italic": False,
-                    "color": "#FFFFFF",
-                    "opacity": 80,
-                    "rotation": 0,
-                    "shadow": False,
-                    "shadow_color": "#000000",
-                    "shadow_offset": 2,
-                    "shadow_blur": 0,
-                    "outline": False,
-                    "outline_color": "#000000",
-                    "outline_width": 1,
-                    "image_path": "",
-                    "image_scale": 100,
-                    "offset_x": 0,
-                    "offset_y": 0
-                }
+                # 为每张图片初始化个性化设置（使用默认值）
+                self.per_image_settings[path] = self.default_per_image_settings.copy()
 
                 # 创建列表项
                 item = QListWidgetItem()
@@ -1309,7 +1328,10 @@ class WatermarkApp(QMainWindow):
                 try:
                     image = self.load_and_fix_image(path)
                     if image:
-                        image_rgb = image.convert("RGB")
+                        # 确保图片是RGB模式
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
+                        image_rgb = image
                         data = image_rgb.tobytes("raw", "RGB")
                         qimage = QImage(data, image_rgb.size[0], image_rgb.size[1], QImage.Format_RGB888)
                         pixmap = QPixmap.fromImage(qimage)
@@ -1373,25 +1395,64 @@ class WatermarkApp(QMainWindow):
         return image
 
     def clear_images(self):
+        """清空图片列表并重置所有参数"""
         self.images.clear()
         self.image_list.clear()
         self.current_image_index = -1
         self.per_image_settings.clear()
         self.image_cache.clear()
+
+        # 重置共享设置为默认值
+        self.shared_settings = self.default_shared_settings.copy()
+
+        # 重置UI控件为默认值
+        self.apply_shared_settings_to_ui()
+
+        # 重置个性化设置UI为默认值
+        self.reset_per_image_ui_to_default()
+
         self.preview_label.setText("🎨 导入图片后预览将显示在这里")
         if self.draggable_watermark:
             self.draggable_watermark.setParent(None)
             self.draggable_watermark = None
 
+        # 重置当前设置类型
+        self.current_settings_type = "shared"
+        self.tabs.setCurrentIndex(0)
+
+    def reset_per_image_ui_to_default(self):
+        """重置个性化设置UI为默认值"""
+        self.per_image_watermark_type.setCurrentText("文本水印")
+        self.per_image_text_input.clear()
+        self.per_image_font_combo.setCurrentText("Microsoft YaHei")
+        self.per_image_font_size.setValue(200)
+        self.per_image_bold_check.setChecked(False)
+        self.per_image_italic_check.setChecked(False)
+        self.per_image_color_btn.setStyleSheet("background-color: #FFFFFF; border-radius: 4px; min-height: 20px;")
+        self.per_image_opacity_slider.setValue(80)
+        self.per_image_rotation_slider.setValue(0)
+        self.per_image_shadow_check.setChecked(False)
+        self.per_image_shadow_color_btn.setStyleSheet(
+            "background-color: #000000; border-radius: 4px; min-height: 20px;")
+        self.per_image_shadow_offset.setValue(2)
+        self.per_image_outline_check.setChecked(False)
+        self.per_image_outline_color_btn.setStyleSheet(
+            "background-color: #000000; border-radius: 4px; min-height: 20px;")
+        self.per_image_outline_width.setValue(1)
+        self.per_image_image_path_label.setText("未选择")
+        self.per_image_image_scale.setValue(100)
+        self.per_image_image_opacity_slider.setValue(80)
+        self.per_image_offset_x.setValue(0)
+        self.per_image_offset_y.setValue(0)
+
     def on_image_selected(self, index):
         if index >= 0 and index < len(self.images):
             self.current_image_index = index
-            # 如果当前是共享设置模式，切换到个性化设置模式
-            if self.settings_type_combo.currentText() == "共享设置":
-                self.settings_type_combo.setCurrentText("个性化设置")
-            else:
-                # 更新个性化设置UI
-                self.apply_per_image_settings_to_ui()
+            # 切换到个性化设置标签页
+            self.tabs.setCurrentIndex(1)
+            self.current_settings_type = "per_image"
+            # 更新个性化设置UI
+            self.apply_per_image_settings_to_ui()
             self.update_preview()
 
     def preview_mouse_press(self, event):
@@ -1417,33 +1478,55 @@ class WatermarkApp(QMainWindow):
         self.draggable_watermark = DraggableLabel(self.preview_label)
 
         # 获取当前设置类型
-        is_shared = self.settings_type_combo.currentText() == "共享设置"
-
-        watermark_type = self.watermark_type.currentText() if is_shared else self.per_image_watermark_type.currentText()
+        if self.current_settings_type == "shared":
+            watermark_type = self.watermark_type.currentText()
+        else:
+            watermark_type = self.per_image_watermark_type.currentText()
 
         if watermark_type == "文本水印":
-            text = self.text_input.text() if is_shared else self.get_current_per_image_text()
+            if self.current_settings_type == "shared":
+                text = self.text_input.text()
+                font_size = self.font_size.value()
+                font_family = self.font_combo.currentText()
+                bold = self.bold_check.isChecked()
+                italic = self.italic_check.isChecked()
+                color_btn = self.color_btn
+            else:
+                text = self.get_current_per_image_text()
+                font_size = self.per_image_font_size.value()
+                font_family = self.per_image_font_combo.currentText()
+                bold = self.per_image_bold_check.isChecked()
+                italic = self.per_image_italic_check.isChecked()
+                color_btn = self.per_image_color_btn
+
             self.draggable_watermark.setText(text)
 
-            font_size = self.font_size.value() if is_shared else self.per_image_font_size.value()
-            font_family = self.font_combo.currentText() if is_shared else self.per_image_font_combo.currentText()
-
             font = QFont(font_family, min(font_size // 10, 50))
-            font.setBold(self.bold_check.isChecked() if is_shared else self.per_image_bold_check.isChecked())
-            font.setItalic(self.italic_check.isChecked() if is_shared else self.per_image_italic_check.isChecked())
+            font.setBold(bold)
+            font.setItalic(italic)
             self.draggable_watermark.setFont(font)
 
-            color_btn = self.color_btn if is_shared else self.per_image_color_btn
-            color = color_btn.styleSheet().split(": ")[1].split(";")[0]
+            # 修复颜色获取逻辑
+            color_style = color_btn.styleSheet()
+            if "background-color:" in color_style:
+                color = color_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                color = "#FFFFFF"  # 默认白色
+
             self.draggable_watermark.setStyleSheet(
                 f"color: {color}; background-color: rgba(255, 255, 255, 0.7); border: 2px dashed #7b68ee; border-radius: 8px; font-size: 14px;")
         else:
-            image_path = self.shared_settings["image_path"] if is_shared else self.get_current_per_image_path()
+            if self.current_settings_type == "shared":
+                image_path = self.shared_settings["image_path"]
+                scale = self.image_scale.value()
+            else:
+                image_path = self.get_current_per_image_path()
+                scale = self.per_image_image_scale.value()
+
             if image_path and os.path.exists(image_path):
                 try:
                     pixmap = QPixmap(image_path)
                     if not pixmap.isNull():
-                        scale = self.image_scale.value() if is_shared else self.per_image_image_scale.value()
                         scale = scale / 100.0
                         new_size = QSize(int(pixmap.width() * scale), int(pixmap.height() * scale))
                         pixmap = pixmap.scaled(new_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -1461,6 +1544,7 @@ class WatermarkApp(QMainWindow):
             image_path = self.images[self.current_image_index]
             self.per_image_settings[image_path]["offset_x"] = x
             self.per_image_settings[image_path]["offset_y"] = y
+            self.schedule_preview_update()
 
     def schedule_preview_update(self):
         self.preview_timer.start(300)
@@ -1477,6 +1561,7 @@ class WatermarkApp(QMainWindow):
         try:
             original_image = self.load_and_fix_image(image_path)
             if original_image is None:
+                self.preview_label.setText("无法加载图片")
                 return
 
             # 调整图片尺寸
@@ -1526,33 +1611,38 @@ class WatermarkApp(QMainWindow):
 
         except Exception as e:
             print(f"预览更新错误: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.preview_label.setText(f"预览错误: {str(e)}")
 
     def add_watermark_to_image(self, image):
         result = image.copy()
 
-        # 判断使用共享设置还是个性化设置
-        is_shared = self.settings_type_combo.currentText() == "共享设置"
-
-        if is_shared:
+        # 根据当前设置类型选择参数
+        if self.current_settings_type == "shared":
+            # 使用共享设置
             watermark_type = self.watermark_type.currentText()
         else:
+            # 使用个性化设置
             watermark_type = self.per_image_watermark_type.currentText()
 
         if watermark_type == "文本水印":
-            result = self.add_text_watermark(result, is_shared)
+            result = self.add_text_watermark(result)
         else:
-            result = self.add_image_watermark(result, is_shared)
+            result = self.add_image_watermark(result)
 
         return result
 
-    def get_current_text(self, is_shared):
+    def get_current_text(self):
         """获取当前文本"""
-        if is_shared:
+        if self.current_settings_type == "shared":
             return self.text_input.text()
         else:
             if self.current_image_index >= 0:
                 image_path = self.images[self.current_image_index]
-                return self.per_image_settings[image_path].get("text", self.text_input.text())
+                per_image_text = self.per_image_settings[image_path].get("text", "")
+                # 如果个性化文本为空，则使用共享文本
+                return per_image_text if per_image_text else self.text_input.text()
             return self.text_input.text()
 
     def get_current_per_image_text(self):
@@ -1569,9 +1659,9 @@ class WatermarkApp(QMainWindow):
             return self.per_image_settings[image_path].get("image_path", "")
         return ""
 
-    def get_current_font_size(self, is_shared):
+    def get_current_font_size(self):
         """获取当前字体大小"""
-        if is_shared:
+        if self.current_settings_type == "shared":
             return self.font_size.value()
         else:
             if self.current_image_index >= 0:
@@ -1589,27 +1679,46 @@ class WatermarkApp(QMainWindow):
             )
         return (0, 0)
 
-    def add_text_watermark(self, image, is_shared):
+    def add_text_watermark(self, image):
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
-        text = self.get_current_text(is_shared)
+        text = self.get_current_text()
         if not text:
             return image
 
         # 获取字体设置
-        if is_shared:
+        if self.current_settings_type == "shared":
             font_family = self.font_combo.currentText()
             font_size = self.font_size.value()
             bold = self.bold_check.isChecked()
             italic = self.italic_check.isChecked()
-            color_btn = self.color_btn
+
+            # 修复颜色获取逻辑
+            color_style = self.color_btn.styleSheet()
+            if "background-color:" in color_style:
+                color = color_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                color = "#FFFFFF"
+
             opacity = self.opacity_slider.value()
             shadow = self.shadow_check.isChecked()
-            shadow_color_btn = self.shadow_color_btn
+
+            shadow_style = self.shadow_color_btn.styleSheet()
+            if "background-color:" in shadow_style:
+                shadow_color = shadow_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                shadow_color = "#000000"
+
             shadow_offset = self.shadow_offset.value()
             outline = self.outline_check.isChecked()
-            outline_color_btn = self.outline_color_btn
+
+            outline_style = self.outline_color_btn.styleSheet()
+            if "background-color:" in outline_style:
+                outline_color = outline_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                outline_color = "#000000"
+
             outline_width = self.outline_width.value()
             rotation = self.rotation_slider.value()
         else:
@@ -1663,7 +1772,18 @@ class WatermarkApp(QMainWindow):
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
         except:
-            text_width, text_height = temp_draw.textsize(text, font=font)
+            # 如果textbbox不可用，使用旧方法
+            try:
+                text_width, text_height = temp_draw.textsize(text, font=font)
+            except:
+                # 如果都失败，使用估计值
+                text_width = len(text) * font_size // 2
+                text_height = font_size
+
+        # 如果计算出的尺寸为0，使用默认值
+        if text_width == 0 or text_height == 0:
+            text_width = 100
+            text_height = 50
 
         # 计算水印位置
         position = self.position_combo.currentText()
@@ -1710,55 +1830,71 @@ class WatermarkApp(QMainWindow):
             x += offset_x
             y += offset_y
 
+        # 确保位置在图片范围内
+        x = max(0, min(x, img_width - text_width))
+        y = max(0, min(y, img_height - text_height))
+
         # 获取颜色
-        if is_shared:
-            color = color_btn.styleSheet().split(": ")[1].split(";")[0]
-            shadow_color = shadow_color_btn.styleSheet().split(": ")[1].split(";")[0]
-            outline_color = outline_color_btn.styleSheet().split(": ")[1].split(";")[0]
-        else:
-            # 使用从设置中获取的颜色
-            pass
-
         from PIL import ImageColor
-        rgb = ImageColor.getrgb(color)
-        shadow_rgb = ImageColor.getrgb(shadow_color)
-        outline_rgb = ImageColor.getrgb(outline_color)
+        try:
+            rgb = ImageColor.getrgb(color)
+            shadow_rgb = ImageColor.getrgb(shadow_color)
+            outline_rgb = ImageColor.getrgb(outline_color)
+        except:
+            # 如果颜色解析失败，使用默认值
+            rgb = (255, 255, 255)
+            shadow_rgb = (0, 0, 0)
+            outline_rgb = (0, 0, 0)
 
-        if rotation != 0:
-            text_image = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            text_draw = ImageDraw.Draw(text_image)
+        # 创建临时图像用于绘制效果
+        if rotation != 0 or shadow or outline:
+            try:
+                # 创建透明图层
+                text_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                text_draw = ImageDraw.Draw(text_layer)
 
-            if outline:
-                for dx in range(-outline_width, outline_width + 1):
-                    for dy in range(-outline_width, outline_width + 1):
-                        if dx != 0 or dy != 0:
-                            text_draw.text((x + dx, y + dy), text, font=font, fill=outline_rgb)
+                # 绘制阴影效果
+                if shadow:
+                    shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                    shadow_draw = ImageDraw.Draw(shadow_layer)
+                    shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font,
+                                     fill=shadow_rgb + (int(255 * opacity / 100),))
+                    # 应用模糊效果
+                    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=1))
+                    text_layer = Image.alpha_composite(text_layer, shadow_layer)
 
-            if shadow:
-                text_draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_rgb)
+                # 绘制描边效果
+                if outline and outline_width > 0:
+                    for dx in range(-outline_width, outline_width + 1):
+                        for dy in range(-outline_width, outline_width + 1):
+                            if dx != 0 or dy != 0:
+                                text_draw.text((x + dx, y + dy), text, font=font,
+                                               fill=outline_rgb + (int(255 * opacity / 100),))
 
-            text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
+                # 绘制主文本
+                text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
 
-            rotated_text = text_image.rotate(rotation, resample=Image.BICUBIC, expand=False, center=(x, y))
-            image = Image.alpha_composite(image.convert('RGBA'), rotated_text).convert('RGB')
+                # 应用旋转
+                if rotation != 0:
+                    text_layer = text_layer.rotate(rotation, resample=Image.BICUBIC, expand=False)
+
+                # 合并图层
+                image = image.convert('RGBA')
+                result = Image.alpha_composite(image, text_layer).convert('RGB')
+            except Exception as e:
+                print(f"高级水印效果错误: {str(e)}")
+                # 如果高级效果失败，使用简单绘制
+                draw = ImageDraw.Draw(image)
+                draw.text((x, y), text, font=font, fill=rgb)
         else:
+            # 简单绘制（无效果）
             draw = ImageDraw.Draw(image)
-
-            if outline:
-                for dx in range(-outline_width, outline_width + 1):
-                    for dy in range(-outline_width, outline_width + 1):
-                        if dx != 0 or dy != 0:
-                            draw.text((x + dx, y + dy), text, font=font, fill=outline_rgb)
-
-            if shadow:
-                draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_rgb)
-
             draw.text((x, y), text, font=font, fill=rgb)
 
         return image
 
-    def add_image_watermark(self, image, is_shared):
-        if is_shared:
+    def add_image_watermark(self, image):
+        if self.current_settings_type == "shared":
             watermark_path = self.shared_settings["image_path"]
             scale = self.image_scale.value() / 100.0
             opacity = self.image_opacity_slider.value()
@@ -1888,7 +2024,7 @@ class WatermarkApp(QMainWindow):
     def apply_shared_settings_to_ui(self):
         """应用共享设置到UI"""
         self.watermark_type.setCurrentText("文本水印" if self.shared_settings["type"] == "text" else "图片水印")
-        self.text_input.setText("水印")
+        self.text_input.setText(self.shared_settings["text"])
         self.font_combo.setCurrentText(self.shared_settings["font_family"])
         self.font_size.setValue(self.shared_settings["font_size"])
         self.bold_check.setChecked(self.shared_settings["bold"])
@@ -1916,7 +2052,17 @@ class WatermarkApp(QMainWindow):
         self.image_path_label.setText(
             os.path.basename(self.shared_settings["image_path"]) if self.shared_settings["image_path"] else "未选择")
         self.image_scale.setValue(self.shared_settings["image_scale"])
-        self.image_opacity_slider.setValue(80)
+        self.image_opacity_slider.setValue(self.shared_settings["opacity"])
+
+        # 导出设置
+        self.format_combo.setCurrentText(self.shared_settings["output_format"])
+        self.quality_slider.setValue(self.shared_settings["quality"])
+        self.prefix_input.setText(self.shared_settings["naming_prefix"])
+        self.suffix_input.setText(self.shared_settings["naming_suffix"])
+        self.resize_check.setChecked(self.shared_settings["resize_enabled"])
+        self.resize_percent.setValue(self.shared_settings["resize_percent"])
+        self.resize_width.setValue(self.shared_settings["resize_width"])
+        self.resize_height.setValue(self.shared_settings["resize_height"])
 
     def apply_per_image_settings_to_ui(self):
         """应用个性化设置到UI"""
@@ -1966,30 +2112,78 @@ class WatermarkApp(QMainWindow):
 
     def save_shared_settings_from_ui(self):
         """从UI保存共享设置"""
+        # 修复颜色获取逻辑
+        color_style = self.color_btn.styleSheet()
+        if "background-color:" in color_style:
+            color = color_style.split("background-color:")[1].split(";")[0].strip()
+        else:
+            color = "#FFFFFF"
+
+        shadow_style = self.shadow_color_btn.styleSheet()
+        if "background-color:" in shadow_style:
+            shadow_color = shadow_style.split("background-color:")[1].split(";")[0].strip()
+        else:
+            shadow_color = "#000000"
+
+        outline_style = self.outline_color_btn.styleSheet()
+        if "background-color:" in outline_style:
+            outline_color = outline_style.split("background-color:")[1].split(";")[0].strip()
+        else:
+            outline_color = "#000000"
+
         self.shared_settings.update({
             "type": "text" if self.watermark_type.currentText() == "文本水印" else "image",
+            "text": self.text_input.text(),
             "font_family": self.font_combo.currentText(),
             "font_size": self.font_size.value(),
             "bold": self.bold_check.isChecked(),
             "italic": self.italic_check.isChecked(),
-            "color": self.color_btn.styleSheet().split(": ")[1].split(";")[0],
+            "color": color,
             "opacity": self.opacity_slider.value(),
             "position": self.position_combo.currentText(),
             "rotation": self.rotation_slider.value(),
             "shadow": self.shadow_check.isChecked(),
-            "shadow_color": self.shadow_color_btn.styleSheet().split(": ")[1].split(";")[0],
+            "shadow_color": shadow_color,
             "shadow_offset": self.shadow_offset.value(),
             "outline": self.outline_check.isChecked(),
-            "outline_color": self.outline_color_btn.styleSheet().split(": ")[1].split(";")[0],
+            "outline_color": outline_color,
             "outline_width": self.outline_width.value(),
-            "image_path": self.shared_settings["image_path"],
+            "image_path": self.shared_settings["image_path"],  # 保持不变
             "image_scale": self.image_scale.value(),
+            "output_format": self.format_combo.currentText(),
+            "quality": self.quality_slider.value(),
+            "resize_enabled": self.resize_check.isChecked(),
+            "resize_percent": self.resize_percent.value(),
+            "resize_width": self.resize_width.value(),
+            "resize_height": self.resize_height.value(),
+            "naming_prefix": self.prefix_input.text(),
+            "naming_suffix": self.suffix_input.text()
         })
 
     def save_per_image_settings_from_ui(self):
         """从UI保存个性化设置"""
         if self.current_image_index >= 0:
             image_path = self.images[self.current_image_index]
+
+            # 修复颜色获取逻辑
+            color_style = self.per_image_color_btn.styleSheet()
+            if "background-color:" in color_style:
+                color = color_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                color = "#FFFFFF"
+
+            shadow_style = self.per_image_shadow_color_btn.styleSheet()
+            if "background-color:" in shadow_style:
+                shadow_color = shadow_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                shadow_color = "#000000"
+
+            outline_style = self.per_image_outline_color_btn.styleSheet()
+            if "background-color:" in outline_style:
+                outline_color = outline_style.split("background-color:")[1].split(";")[0].strip()
+            else:
+                outline_color = "#000000"
+
             self.per_image_settings[image_path].update({
                 "type": "text" if self.per_image_watermark_type.currentText() == "文本水印" else "image",
                 "text": self.per_image_text_input.text(),
@@ -1997,14 +2191,14 @@ class WatermarkApp(QMainWindow):
                 "font_size": self.per_image_font_size.value(),
                 "bold": self.per_image_bold_check.isChecked(),
                 "italic": self.per_image_italic_check.isChecked(),
-                "color": self.per_image_color_btn.styleSheet().split(": ")[1].split(";")[0],
+                "color": color,
                 "opacity": self.per_image_opacity_slider.value(),
                 "rotation": self.per_image_rotation_slider.value(),
                 "shadow": self.per_image_shadow_check.isChecked(),
-                "shadow_color": self.per_image_shadow_color_btn.styleSheet().split(": ")[1].split(";")[0],
+                "shadow_color": shadow_color,
                 "shadow_offset": self.per_image_shadow_offset.value(),
                 "outline": self.per_image_outline_check.isChecked(),
-                "outline_color": self.per_image_outline_color_btn.styleSheet().split(": ")[1].split(";")[0],
+                "outline_color": outline_color,
                 "outline_width": self.per_image_outline_width.value(),
                 "image_path": self.per_image_settings[image_path].get("image_path", ""),
                 "image_scale": self.per_image_image_scale.value(),
@@ -2021,7 +2215,7 @@ class WatermarkApp(QMainWindow):
         date = self.get_exif_date(image_path)
         if date:
             self.text_input.setText(date)
-            self.schedule_preview_update()
+            self.on_shared_parameter_changed()
 
     def use_exif_date_per_image(self):
         if self.current_image_index < 0:
@@ -2032,7 +2226,7 @@ class WatermarkApp(QMainWindow):
         date = self.get_exif_date(image_path)
         if date:
             self.per_image_text_input.setText(date)
-            self.schedule_preview_update()
+            self.on_per_image_parameter_changed()
 
     def get_exif_date(self, image_path):
         try:
@@ -2124,7 +2318,11 @@ class WatermarkApp(QMainWindow):
 
                     original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
+            # 导出时使用共享设置
+            current_settings_type_backup = self.current_settings_type
+            self.current_settings_type = "shared"
             watermarked_image = self.add_watermark_to_image(original_image)
+            self.current_settings_type = current_settings_type_backup
 
             filename = os.path.basename(image_path)
             name, ext = os.path.splitext(filename)
@@ -2285,8 +2483,14 @@ class WatermarkApp(QMainWindow):
 
 # 运行应用
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
-    window = WatermarkApp()
-    window.show()
-    sys.exit(app.exec_())
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')
+        window = WatermarkApp()
+        window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"程序运行错误: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
