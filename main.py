@@ -349,7 +349,7 @@ class WatermarkApp(QMainWindow):
             "type": "text",
             "text": "水印",
             "font_family": "Microsoft YaHei",
-            "font_size": 200,
+            "font_size": 40,
             "bold": False,
             "italic": False,
             "color": "#FFFFFF",
@@ -359,7 +359,7 @@ class WatermarkApp(QMainWindow):
             "shadow": False,
             "shadow_color": "#000000",
             "shadow_offset": 2,
-            "shadow_blur": 0,
+            "shadow_blur": 2,
             "outline": False,
             "outline_color": "#000000",
             "outline_width": 1,
@@ -380,7 +380,7 @@ class WatermarkApp(QMainWindow):
             "type": "text",
             "text": "",  # 为空时使用共享设置的文本
             "font_family": "Microsoft YaHei",
-            "font_size": 200,
+            "font_size": 40,
             "bold": False,
             "italic": False,
             "color": "#FFFFFF",
@@ -389,6 +389,7 @@ class WatermarkApp(QMainWindow):
             "shadow": False,
             "shadow_color": "#000000",
             "shadow_offset": 2,
+            "shadow_blur": 2,
             "outline": False,
             "outline_color": "#000000",
             "outline_width": 1,
@@ -640,7 +641,7 @@ class WatermarkApp(QMainWindow):
         text_layout.addWidget(QLabel("字体大小:"), 2, 0)
         self.font_size = QSpinBox()
         self.font_size.setRange(10, 500)
-        self.font_size.setValue(200)
+        self.font_size.setValue(40)  # 减小默认值
         self.font_size.valueChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.font_size, 2, 1)
 
@@ -686,23 +687,31 @@ class WatermarkApp(QMainWindow):
         self.shadow_offset.valueChanged.connect(self.on_shared_parameter_changed)
         text_layout.addWidget(self.shadow_offset, 4, 4)
 
+        # 阴影模糊
+        text_layout.addWidget(QLabel("阴影模糊:"), 5, 0)
+        self.shadow_blur = QSpinBox()
+        self.shadow_blur.setRange(0, 10)
+        self.shadow_blur.setValue(2)
+        self.shadow_blur.valueChanged.connect(self.on_shared_parameter_changed)
+        text_layout.addWidget(self.shadow_blur, 5, 1)
+
         # 描边效果
         self.outline_check = QCheckBox("描边效果")
         self.outline_check.stateChanged.connect(self.on_shared_parameter_changed)
-        text_layout.addWidget(self.outline_check, 5, 0)
+        text_layout.addWidget(self.outline_check, 6, 0)
 
-        text_layout.addWidget(QLabel("描边颜色:"), 5, 1)
+        text_layout.addWidget(QLabel("描边颜色:"), 6, 1)
         self.outline_color_btn = QPushButton()
         self.outline_color_btn.setStyleSheet("background-color: #000000; border-radius: 4px; min-height: 20px;")
         self.outline_color_btn.clicked.connect(self.choose_outline_color)
-        text_layout.addWidget(self.outline_color_btn, 5, 2)
+        text_layout.addWidget(self.outline_color_btn, 6, 2)
 
-        text_layout.addWidget(QLabel("描边宽度:"), 5, 3)
+        text_layout.addWidget(QLabel("描边宽度:"), 6, 3)
         self.outline_width = QSpinBox()
         self.outline_width.setRange(1, 10)
         self.outline_width.setValue(1)
         self.outline_width.valueChanged.connect(self.on_shared_parameter_changed)
-        text_layout.addWidget(self.outline_width, 5, 4)
+        text_layout.addWidget(self.outline_width, 6, 4)
 
         layout.addWidget(self.text_group)
 
@@ -822,7 +831,7 @@ class WatermarkApp(QMainWindow):
         text_layout.addWidget(QLabel("字体大小:"), 2, 0)
         self.per_image_font_size = QSpinBox()
         self.per_image_font_size.setRange(10, 500)
-        self.per_image_font_size.setValue(200)
+        self.per_image_font_size.setValue(40)  # 减小默认值
         self.per_image_font_size.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_font_size, 2, 1)
 
@@ -869,24 +878,32 @@ class WatermarkApp(QMainWindow):
         self.per_image_shadow_offset.valueChanged.connect(self.on_per_image_parameter_changed)
         text_layout.addWidget(self.per_image_shadow_offset, 4, 4)
 
+        # 阴影模糊
+        text_layout.addWidget(QLabel("阴影模糊:"), 5, 0)
+        self.per_image_shadow_blur = QSpinBox()
+        self.per_image_shadow_blur.setRange(0, 10)
+        self.per_image_shadow_blur.setValue(2)
+        self.per_image_shadow_blur.valueChanged.connect(self.on_per_image_parameter_changed)
+        text_layout.addWidget(self.per_image_shadow_blur, 5, 1)
+
         # 描边效果
         self.per_image_outline_check = QCheckBox("描边效果")
         self.per_image_outline_check.stateChanged.connect(self.on_per_image_parameter_changed)
-        text_layout.addWidget(self.per_image_outline_check, 5, 0)
+        text_layout.addWidget(self.per_image_outline_check, 6, 0)
 
-        text_layout.addWidget(QLabel("描边颜色:"), 5, 1)
+        text_layout.addWidget(QLabel("描边颜色:"), 6, 1)
         self.per_image_outline_color_btn = QPushButton()
         self.per_image_outline_color_btn.setStyleSheet(
             "background-color: #000000; border-radius: 4px; min-height: 20px;")
         self.per_image_outline_color_btn.clicked.connect(self.choose_per_image_outline_color)
-        text_layout.addWidget(self.per_image_outline_color_btn, 5, 2)
+        text_layout.addWidget(self.per_image_outline_color_btn, 6, 2)
 
-        text_layout.addWidget(QLabel("描边宽度:"), 5, 3)
+        text_layout.addWidget(QLabel("描边宽度:"), 6, 3)
         self.per_image_outline_width = QSpinBox()
         self.per_image_outline_width.setRange(1, 10)
         self.per_image_outline_width.setValue(1)
         self.per_image_outline_width.valueChanged.connect(self.on_per_image_parameter_changed)
-        text_layout.addWidget(self.per_image_outline_width, 5, 4)
+        text_layout.addWidget(self.per_image_outline_width, 6, 4)
 
         layout.addWidget(self.per_image_text_group)
 
@@ -1425,7 +1442,7 @@ class WatermarkApp(QMainWindow):
         self.per_image_watermark_type.setCurrentText("文本水印")
         self.per_image_text_input.clear()
         self.per_image_font_combo.setCurrentText("Microsoft YaHei")
-        self.per_image_font_size.setValue(200)
+        self.per_image_font_size.setValue(40)
         self.per_image_bold_check.setChecked(False)
         self.per_image_italic_check.setChecked(False)
         self.per_image_color_btn.setStyleSheet("background-color: #FFFFFF; border-radius: 4px; min-height: 20px;")
@@ -1435,6 +1452,7 @@ class WatermarkApp(QMainWindow):
         self.per_image_shadow_color_btn.setStyleSheet(
             "background-color: #000000; border-radius: 4px; min-height: 20px;")
         self.per_image_shadow_offset.setValue(2)
+        self.per_image_shadow_blur.setValue(2)
         self.per_image_outline_check.setChecked(False)
         self.per_image_outline_color_btn.setStyleSheet(
             "background-color: #000000; border-radius: 4px; min-height: 20px;")
@@ -1835,63 +1853,119 @@ class WatermarkApp(QMainWindow):
         y = max(0, min(y, img_height - text_height))
 
         # 获取颜色
-        from PIL import ImageColor
         try:
-            rgb = ImageColor.getrgb(color)
-            shadow_rgb = ImageColor.getrgb(shadow_color)
-            outline_rgb = ImageColor.getrgb(outline_color)
+            # 直接使用PIL的ImageColor模块，不需要额外导入
+            rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) if color.startswith('#') else (255, 255, 255)
+            shadow_rgb = tuple(int(shadow_color[i:i + 2], 16) for i in (1, 3, 5)) if shadow_color.startswith('#') else (
+            0, 0, 0)
+            outline_rgb = tuple(int(outline_color[i:i + 2], 16) for i in (1, 3, 5)) if outline_color.startswith(
+                '#') else (0, 0, 0)
         except:
             # 如果颜色解析失败，使用默认值
             rgb = (255, 255, 255)
             shadow_rgb = (0, 0, 0)
             outline_rgb = (0, 0, 0)
 
-        # 创建临时图像用于绘制效果
-        if rotation != 0 or shadow or outline:
+        # 修复旋转问题：简化处理逻辑
+        if rotation != 0:
+            # 创建单独的文本图像进行旋转
             try:
-                # 创建透明图层
-                text_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                # 创建足够大的文本图层（考虑旋转后的尺寸）
+                rotation_margin = int(max(text_width, text_height) * 0.5)
+                text_layer_width = text_width + 2 * rotation_margin
+                text_layer_height = text_height + 2 * rotation_margin
+
+                text_layer = Image.new('RGBA', (text_layer_width, text_layer_height), (0, 0, 0, 0))
                 text_draw = ImageDraw.Draw(text_layer)
+
+                # 在文本图层中心绘制文本
+                text_x = rotation_margin
+                text_y = rotation_margin
 
                 # 绘制阴影效果
                 if shadow:
-                    shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-                    shadow_draw = ImageDraw.Draw(shadow_layer)
-                    shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font,
+                    shadow_draw = ImageDraw.Draw(text_layer)
+                    shadow_draw.text((text_x + shadow_offset, text_y + shadow_offset), text, font=font,
                                      fill=shadow_rgb + (int(255 * opacity / 100),))
-                    # 应用模糊效果
-                    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=1))
-                    text_layer = Image.alpha_composite(text_layer, shadow_layer)
 
                 # 绘制描边效果
                 if outline and outline_width > 0:
                     for dx in range(-outline_width, outline_width + 1):
                         for dy in range(-outline_width, outline_width + 1):
                             if dx != 0 or dy != 0:
-                                text_draw.text((x + dx, y + dy), text, font=font,
+                                text_draw.text((text_x + dx, text_y + dy), text, font=font,
                                                fill=outline_rgb + (int(255 * opacity / 100),))
 
                 # 绘制主文本
-                text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
+                text_draw.text((text_x, text_y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
 
                 # 应用旋转
-                if rotation != 0:
-                    text_layer = text_layer.rotate(rotation, resample=Image.BICUBIC, expand=False)
+                rotated_text = text_layer.rotate(rotation, resample=Image.BICUBIC, expand=True)
 
-                # 合并图层
-                image = image.convert('RGBA')
-                result = Image.alpha_composite(image, text_layer).convert('RGB')
+                # 计算旋转后文本的位置（保持中心点不变）
+                rot_width, rot_height = rotated_text.size
+                new_x = x + text_width // 2 - rot_width // 2
+                new_y = y + text_height // 2 - rot_height // 2
+
+                # 将旋转后的文本粘贴到原图
+                if image.mode != 'RGBA':
+                    image = image.convert('RGBA')
+
+                image.paste(rotated_text, (new_x, new_y), rotated_text)
+                result = image.convert('RGB')
+
             except Exception as e:
-                print(f"高级水印效果错误: {str(e)}")
-                # 如果高级效果失败，使用简单绘制
+                print(f"旋转水印错误: {str(e)}")
+                # 如果旋转失败，使用简单绘制
                 draw = ImageDraw.Draw(image)
                 draw.text((x, y), text, font=font, fill=rgb)
+                result = image
         else:
-            # 简单绘制（无效果）
-            draw = ImageDraw.Draw(image)
-            draw.text((x, y), text, font=font, fill=rgb)
+            # 没有旋转的情况：使用原来的效果处理
+            if shadow or outline:
+                try:
+                    # 创建透明图层
+                    text_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                    text_draw = ImageDraw.Draw(text_layer)
 
-        return image
+                    # 绘制阴影效果
+                    if shadow:
+                        shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+                        shadow_draw = ImageDraw.Draw(shadow_layer)
+                        shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font,
+                                         fill=shadow_rgb + (int(255 * opacity / 100),))
+                        # 应用模糊效果
+                        if hasattr(ImageFilter, 'GaussianBlur'):
+                            shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=1))
+                        text_layer = Image.alpha_composite(text_layer, shadow_layer)
+
+                    # 绘制描边效果
+                    if outline and outline_width > 0:
+                        for dx in range(-outline_width, outline_width + 1):
+                            for dy in range(-outline_width, outline_width + 1):
+                                if dx != 0 or dy != 0:
+                                    text_draw.text((x + dx, y + dy), text, font=font,
+                                                   fill=outline_rgb + (int(255 * opacity / 100),))
+
+                    # 绘制主文本
+                    text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
+
+                    # 合并图层
+                    image = image.convert('RGBA')
+                    result = Image.alpha_composite(image, text_layer).convert('RGB')
+                except Exception as e:
+                    print(f"高级水印效果错误: {str(e)}")
+                    # 如果高级效果失败，使用简单绘制
+                    draw = ImageDraw.Draw(image)
+                    draw.text((x, y), text, font=font, fill=rgb)
+                    result = image
+            else:
+                # 简单绘制（无效果）
+                draw = ImageDraw.Draw(image)
+                draw.text((x, y), text, font=font, fill=rgb)
+                result = image
+
+        return result
 
     def add_image_watermark(self, image):
         if self.current_settings_type == "shared":
@@ -1974,21 +2048,40 @@ class WatermarkApp(QMainWindow):
                 y += offset_y
 
             if rotation != 0:
+                # 计算旋转中心
                 center_x = x + wm_width // 2
                 center_y = y + wm_height // 2
-                watermark = watermark.rotate(rotation, resample=Image.BICUBIC, expand=True)
-                wm_width, wm_height = watermark.size
-                x = center_x - wm_width // 2
-                y = center_y - wm_height // 2
 
-            x = max(0, min(x, img_width - wm_width))
-            y = max(0, min(y, img_height - wm_height))
+                # 创建新的透明图层来包含旋转后的水印
+                rotated_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
 
+                # 旋转水印
+                rotated_watermark = watermark.rotate(
+                    rotation,
+                    resample=Image.BICUBIC,
+                    expand=True
+                )
+
+                # 计算旋转后的位置
+                rotated_width, rotated_height = rotated_watermark.size
+                new_x = center_x - rotated_width // 2
+                new_y = center_y - rotated_height // 2
+
+                # 将旋转后的水印粘贴到新图层
+                rotated_layer.paste(rotated_watermark, (new_x, new_y), rotated_watermark)
+                watermark = rotated_layer
+            else:
+                # 如果没有旋转，直接使用原水印
+                if image.mode != 'RGBA':
+                    image = image.convert('RGBA')
+                image.paste(watermark, (x, y), watermark)
+                return image.convert("RGB")
+
+            # 合并图层
             if image.mode != 'RGBA':
                 image = image.convert('RGBA')
-
-            image.paste(watermark, (x, y), watermark)
-            return image.convert("RGB")
+            result = Image.alpha_composite(image, watermark).convert('RGB')
+            return result
 
         except Exception as e:
             print(f"图片水印错误: {str(e)}")
@@ -2042,6 +2135,7 @@ class WatermarkApp(QMainWindow):
         self.shadow_color_btn.setStyleSheet(f"background-color: {shadow_color}; border-radius: 4px; min-height: 20px;")
 
         self.shadow_offset.setValue(self.shared_settings["shadow_offset"])
+        self.shadow_blur.setValue(self.shared_settings["shadow_blur"])
         self.outline_check.setChecked(self.shared_settings["outline"])
 
         outline_color = self.shared_settings["outline_color"]
@@ -2076,7 +2170,7 @@ class WatermarkApp(QMainWindow):
             # 文本设置
             self.per_image_text_input.setText(settings.get("text", ""))
             self.per_image_font_combo.setCurrentText(settings.get("font_family", "Microsoft YaHei"))
-            self.per_image_font_size.setValue(settings.get("font_size", 200))
+            self.per_image_font_size.setValue(settings.get("font_size", 40))
             self.per_image_bold_check.setChecked(settings.get("bold", False))
             self.per_image_italic_check.setChecked(settings.get("italic", False))
 
@@ -2092,6 +2186,7 @@ class WatermarkApp(QMainWindow):
                 f"background-color: {shadow_color}; border-radius: 4px; min-height: 20px;")
 
             self.per_image_shadow_offset.setValue(settings.get("shadow_offset", 2))
+            self.per_image_shadow_blur.setValue(settings.get("shadow_blur", 2))
             self.per_image_outline_check.setChecked(settings.get("outline", False))
 
             outline_color = settings.get("outline_color", "#000000")
@@ -2145,6 +2240,7 @@ class WatermarkApp(QMainWindow):
             "shadow": self.shadow_check.isChecked(),
             "shadow_color": shadow_color,
             "shadow_offset": self.shadow_offset.value(),
+            "shadow_blur": self.shadow_blur.value(),
             "outline": self.outline_check.isChecked(),
             "outline_color": outline_color,
             "outline_width": self.outline_width.value(),
@@ -2197,6 +2293,7 @@ class WatermarkApp(QMainWindow):
                 "shadow": self.per_image_shadow_check.isChecked(),
                 "shadow_color": shadow_color,
                 "shadow_offset": self.per_image_shadow_offset.value(),
+                "shadow_blur": self.per_image_shadow_blur.value(),
                 "outline": self.per_image_outline_check.isChecked(),
                 "outline_color": outline_color,
                 "outline_width": self.per_image_outline_width.value(),
