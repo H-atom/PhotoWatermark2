@@ -1807,8 +1807,10 @@ class WatermarkApp(QMainWindow):
         position = self.position_combo.currentText()
         img_width, img_height = image.size
 
+        # 获取偏移量 - 修复水平偏移问题
+        offset_x, offset_y = self.get_current_offset()
+
         if position == "自定义拖拽" and self.draggable_watermark:
-            offset_x, offset_y = self.get_current_offset()
             x = offset_x
             y = offset_y
 
@@ -1844,7 +1846,7 @@ class WatermarkApp(QMainWindow):
             else:
                 x, y = img_width - text_width - 10, img_height - text_height - 10
 
-            offset_x, offset_y = self.get_current_offset()
+            # 应用偏移量 - 修复水平偏移
             x += offset_x
             y += offset_y
 
@@ -1866,28 +1868,61 @@ class WatermarkApp(QMainWindow):
             shadow_rgb = (0, 0, 0)
             outline_rgb = (0, 0, 0)
 
-        # 修复旋转问题：简化处理逻辑
-        if rotation != 0:
-            # 创建单独的文本图像进行旋转
-            try:
-                # 创建足够大的文本图层（考虑旋转后的尺寸）
-                rotation_margin = int(max(text_width, text_height) * 0.5)
-                text_layer_width = text_width + 2 * rotation_margin
-                text_layer_height = text_height + 2 * rotation_margin
+        # 修复旋转问题：统一使用图层方法处理所有效果
+        try:
+            # 创建足够大的文本图层（考虑旋转后的尺寸）
+            rotation_margin = int(max(text_width, text_height) * 0.5)
+            text_layer_width = text_width + 2 * rotation_margin
+            text_layer_height = text_height + 2 * rotation_margin
 
-                text_layer = Image.new('RGBA', (text_layer_width, text_layer_height), (0, 0, 0, 0))
-                text_draw = ImageDraw.Draw(text_layer)
+            text_layer = Image.new('RGBA', (text_layer_width, text_layer_height), (0, 0, 0, 0))
+            text_draw = ImageDraw.Draw(text_layer)
 
-                # 在文本图层中心绘制文本
-                text_x = rotation_margin
-                text_y = rotation_margin
+            # 在文本图层中心绘制文本
+            text_x = rotation_margin
+            text_y = rotation_margin
 
-                # 绘制阴影效果
-                if shadow:
-                    shadow_draw = ImageDraw.Draw(text_layer)
-                    shadow_draw.text((text_x + shadow_offset, text_y + shadow_offset), text, font=font,
-                                     fill=shadow_rgb + (int(255 * opacity / 100),))
+            # 处理粗体和斜体效果
+            if bold or italic:
+                # 创建临时图层来处理文本样式
+                temp_text_layer = Image.new('RGBA', (text_layer_width, text_layer_height), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_text_layer)
 
+                # 绘制描边效果
+                if outline and outline_width > 0:
+                    for dx in range(-outline_width, outline_width + 1):
+                        for dy in range(-outline_width, outline_width + 1):
+                            if dx != 0 or dy != 0:
+                                temp_draw.text((text_x + dx, text_y + dy), text, font=font,
+                                               fill=outline_rgb + (int(255 * opacity / 100),))
+
+                # 绘制主文本 - 处理粗体和斜体
+                if bold:
+                    # 模拟粗体：轻微偏移绘制多次
+                    for dx in [-1, 0, 1]:
+                        for dy in [-1, 0, 1]:
+                            if dx == 0 and dy == 0:
+                                continue
+                            temp_draw.text((text_x + dx, text_y + dy), text, font=font,
+                                           fill=rgb + (int(255 * opacity / 100),))
+
+                # 绘制主文本
+                temp_draw.text((text_x, text_y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
+
+                # 处理斜体效果
+                if italic:
+                    # 应用斜体变换
+                    shear_factor = 0.2
+                    temp_text_layer = temp_text_layer.transform(
+                        temp_text_layer.size, Image.AFFINE,
+                        (1, shear_factor, 0, 0, 1, 0),
+                        resample=Image.BICUBIC, fill=(0, 0, 0, 0)
+                    )
+
+                # 合并到主文本图层
+                text_layer = Image.alpha_composite(text_layer, temp_text_layer)
+            else:
+                # 没有粗体斜体时的正常绘制
                 # 绘制描边效果
                 if outline and outline_width > 0:
                     for dx in range(-outline_width, outline_width + 1):
@@ -1899,71 +1934,46 @@ class WatermarkApp(QMainWindow):
                 # 绘制主文本
                 text_draw.text((text_x, text_y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
 
-                # 应用旋转
+            # 绘制阴影效果
+            if shadow:
+                shadow_layer = Image.new('RGBA', (text_layer_width, text_layer_height), (0, 0, 0, 0))
+                shadow_draw = ImageDraw.Draw(shadow_layer)
+                shadow_draw.text((text_x + shadow_offset, text_y + shadow_offset), text, font=font,
+                                 fill=shadow_rgb + (int(255 * opacity / 100),))
+
+                # 应用模糊效果
+                if hasattr(ImageFilter, 'GaussianBlur'):
+                    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=1))
+
+                # 合并阴影图层（放在文本下面）
+                text_layer = Image.alpha_composite(shadow_layer, text_layer)
+
+            # 应用旋转
+            if rotation != 0:
                 rotated_text = text_layer.rotate(rotation, resample=Image.BICUBIC, expand=True)
 
                 # 计算旋转后文本的位置（保持中心点不变）
                 rot_width, rot_height = rotated_text.size
                 new_x = x + text_width // 2 - rot_width // 2
                 new_y = y + text_height // 2 - rot_height // 2
-
-                # 将旋转后的文本粘贴到原图
-                if image.mode != 'RGBA':
-                    image = image.convert('RGBA')
-
-                image.paste(rotated_text, (new_x, new_y), rotated_text)
-                result = image.convert('RGB')
-
-            except Exception as e:
-                print(f"旋转水印错误: {str(e)}")
-                # 如果旋转失败，使用简单绘制
-                draw = ImageDraw.Draw(image)
-                draw.text((x, y), text, font=font, fill=rgb)
-                result = image
-        else:
-            # 没有旋转的情况：使用原来的效果处理
-            if shadow or outline:
-                try:
-                    # 创建透明图层
-                    text_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-                    text_draw = ImageDraw.Draw(text_layer)
-
-                    # 绘制阴影效果
-                    if shadow:
-                        shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-                        shadow_draw = ImageDraw.Draw(shadow_layer)
-                        shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font,
-                                         fill=shadow_rgb + (int(255 * opacity / 100),))
-                        # 应用模糊效果
-                        if hasattr(ImageFilter, 'GaussianBlur'):
-                            shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=1))
-                        text_layer = Image.alpha_composite(text_layer, shadow_layer)
-
-                    # 绘制描边效果
-                    if outline and outline_width > 0:
-                        for dx in range(-outline_width, outline_width + 1):
-                            for dy in range(-outline_width, outline_width + 1):
-                                if dx != 0 or dy != 0:
-                                    text_draw.text((x + dx, y + dy), text, font=font,
-                                                   fill=outline_rgb + (int(255 * opacity / 100),))
-
-                    # 绘制主文本
-                    text_draw.text((x, y), text, font=font, fill=rgb + (int(255 * opacity / 100),))
-
-                    # 合并图层
-                    image = image.convert('RGBA')
-                    result = Image.alpha_composite(image, text_layer).convert('RGB')
-                except Exception as e:
-                    print(f"高级水印效果错误: {str(e)}")
-                    # 如果高级效果失败，使用简单绘制
-                    draw = ImageDraw.Draw(image)
-                    draw.text((x, y), text, font=font, fill=rgb)
-                    result = image
             else:
-                # 简单绘制（无效果）
-                draw = ImageDraw.Draw(image)
-                draw.text((x, y), text, font=font, fill=rgb)
-                result = image
+                rotated_text = text_layer
+                new_x = x - rotation_margin
+                new_y = y - rotation_margin
+
+            # 将文本粘贴到原图
+            if image.mode != 'RGBA':
+                image = image.convert('RGBA')
+
+            image.paste(rotated_text, (new_x, new_y), rotated_text)
+            result = image.convert('RGB')
+
+        except Exception as e:
+            print(f"水印绘制错误: {str(e)}")
+            # 如果复杂效果失败，使用简单绘制
+            draw = ImageDraw.Draw(image)
+            draw.text((x, y), text, font=font, fill=rgb)
+            result = image
 
         return result
 
