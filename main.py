@@ -1859,7 +1859,7 @@ class WatermarkApp(QMainWindow):
             # 直接使用PIL的ImageColor模块，不需要额外导入
             rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) if color.startswith('#') else (255, 255, 255)
             shadow_rgb = tuple(int(shadow_color[i:i + 2], 16) for i in (1, 3, 5)) if shadow_color.startswith('#') else (
-            0, 0, 0)
+                0, 0, 0)
             outline_rgb = tuple(int(outline_color[i:i + 2], 16) for i in (1, 3, 5)) if outline_color.startswith(
                 '#') else (0, 0, 0)
         except:
@@ -1981,7 +1981,7 @@ class WatermarkApp(QMainWindow):
         if self.current_settings_type == "shared":
             watermark_path = self.shared_settings["image_path"]
             scale = self.image_scale.value() / 100.0
-            opacity = self.image_opacity_slider.value()
+            opacity = self.image_opacity_slider.value()  # 使用图片水印专用的透明度设置
             rotation = self.rotation_slider.value()
         else:
             if self.current_image_index >= 0:
@@ -1989,7 +1989,7 @@ class WatermarkApp(QMainWindow):
                 settings = self.per_image_settings[image_path]
                 watermark_path = settings.get("image_path", "")
                 scale = settings.get("image_scale", 100) / 100.0
-                opacity = settings.get("opacity", 80)
+                opacity = self.per_image_image_opacity_slider.value()  # 使用个性化设置的图片水印透明度
                 rotation = settings.get("rotation", 0)
             else:
                 return image
@@ -2000,6 +2000,7 @@ class WatermarkApp(QMainWindow):
         try:
             watermark = Image.open(watermark_path)
 
+            # 确保水印图片是RGBA模式以支持透明度
             if watermark.mode != 'RGBA':
                 watermark = watermark.convert('RGBA')
 
@@ -2007,9 +2008,14 @@ class WatermarkApp(QMainWindow):
             new_height = int(watermark.height * scale)
             watermark = watermark.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
+            # 应用透明度设置
             if opacity < 100:
+                # 创建一个新的alpha通道，应用透明度
                 alpha = watermark.split()[3]
-                alpha = alpha.point(lambda p: p * opacity / 100)
+                # 将透明度转换为0-255范围的值
+                opacity_value = int(255 * opacity / 100)
+                # 调整alpha通道
+                alpha = alpha.point(lambda p: int(p * opacity / 100))
                 watermark.putalpha(alpha)
 
             position = self.position_combo.currentText()
@@ -2080,18 +2086,18 @@ class WatermarkApp(QMainWindow):
                 # 将旋转后的水印粘贴到新图层
                 rotated_layer.paste(rotated_watermark, (new_x, new_y), rotated_watermark)
                 watermark = rotated_layer
+
+                # 合并图层
+                if image.mode != 'RGBA':
+                    image = image.convert('RGBA')
+                result = Image.alpha_composite(image, watermark).convert('RGB')
+                return result
             else:
                 # 如果没有旋转，直接使用原水印
                 if image.mode != 'RGBA':
                     image = image.convert('RGBA')
                 image.paste(watermark, (x, y), watermark)
                 return image.convert("RGB")
-
-            # 合并图层
-            if image.mode != 'RGBA':
-                image = image.convert('RGBA')
-            result = Image.alpha_composite(image, watermark).convert('RGB')
-            return result
 
         except Exception as e:
             print(f"图片水印错误: {str(e)}")
@@ -2425,11 +2431,25 @@ class WatermarkApp(QMainWindow):
 
                     original_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-            # 导出时使用共享设置
-            current_settings_type_backup = self.current_settings_type
-            self.current_settings_type = "shared"
+            # 关键修改：在导出时根据图片是否有个性化设置来决定使用哪种设置
+            # 保存当前设置类型
+            current_settings_backup = self.current_settings_type
+
+            # 检查该图片是否有个性化设置
+            if image_path in self.per_image_settings and self.has_per_image_settings(image_path):
+                # 使用个性化设置
+                self.current_settings_type = "per_image"
+                # 设置当前图片索引以便正确获取个性化设置
+                self.current_image_index = self.images.index(image_path)
+            else:
+                # 使用共享设置
+                self.current_settings_type = "shared"
+
+            # 添加水印
             watermarked_image = self.add_watermark_to_image(original_image)
-            self.current_settings_type = current_settings_type_backup
+
+            # 恢复原来的设置类型
+            self.current_settings_type = current_settings_backup
 
             filename = os.path.basename(image_path)
             name, ext = os.path.splitext(filename)
@@ -2450,6 +2470,26 @@ class WatermarkApp(QMainWindow):
                 watermarked_image.save(output_filepath, format, optimize=True)
         except Exception as e:
             raise Exception(f"处理图片 {os.path.basename(image_path)} 时出错: {str(e)}")
+
+    def has_per_image_settings(self, image_path):
+        """检查图片是否有有效的个性化设置"""
+        if image_path not in self.per_image_settings:
+            return False
+
+        settings = self.per_image_settings[image_path]
+
+        # 检查是否有任何个性化设置与默认值不同
+        for key, value in settings.items():
+            if key in self.default_per_image_settings:
+                default_value = self.default_per_image_settings[key]
+                if value != default_value:
+                    return True
+
+        # 特别检查文本内容是否设置
+        if settings.get("text", ""):
+            return True
+
+        return False
 
     def save_template(self):
         name, ok = QInputDialog.getText(self, "保存模板", "请输入模板名称:")
