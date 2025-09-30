@@ -1,6 +1,7 @@
 # PhotoWatermark
 
-一款功能强大的跨平台桌面应用程序，用于为图片添加自定义水印。支持文本和图片水印，提供丰富的自定义选项和实时预览功能。
+一款功能强大的跨平台桌面应用程序，用于为图片添加自定义水印。支持文本和图片水印，提供丰富的自定义选项和实时预览功能。效果图如下：
+<img width="1594" height="937" alt="image" src="https://github.com/user-attachments/assets/7476e481-bcab-4842-9d9c-eacb9e9b32c1" />
 
 ## 🌟 功能特性
 
